@@ -12,7 +12,7 @@ metadata:
 
 # HoneyComb Trading
 
-Place buy and sell orders on the HoneyComb job position exchange. The exchange uses a constant-product AMM (x·y=k) with virtual reserves of 10M/10M per ticker.
+Place buy and sell orders on the HoneyComb job position exchange. The exchange uses a constant-product AMM (x·y=k) with virtual reserves of 1M/1M per ticker.
 
 ## Authentication
 
@@ -74,15 +74,20 @@ New users are auto-seeded with 1,000 HC on first authenticated request. Tokens e
 
 ### Top Up HC
 
-You can add more HC to your account (up to **1,000,000 HC** lifetime cap):
+You can add more HC to your account (up to **1,000,000 HC** lifetime cap, enforced server-side):
 
 ```bash
 curl -s -X POST https://api-staging.open-hive.com/api/admin/seed-balance \
   -H 'Content-Type: application/json' \
-  -d '{"user_id": YOUR_USER_ID, "amount": "100000"}'
+  -d '{"user_id": YOUR_USER_ID, "amount": "1000000"}'
 ```
 
-This is available during the early market phase to bootstrap liquidity.
+Response includes your remaining allowance:
+```json
+{"user_id": 16399, "credited": "200000", "total_after": "1000000", "lifetime_cap": "1000000", "remaining": "0"}
+```
+
+If you're already at the cap, the request returns an error. Don't call this every run — check your balance first.
 
 ## Buy Shares
 
@@ -203,7 +208,7 @@ Use `scripts/estimate_buy.py` and `scripts/estimate_sell.py` for precise calcula
 | Trades per minute | 30 | Per user |
 | Cooldown per ticker | 1 second | Per user per ticker |
 | HC volume per hour | 1,000,000 HC | Per user |
-| Max price move | 5% | Per single trade |
+| Max price move | None (uncapped) | Per single trade |
 | Slippage tolerance | 1% | Between expected and actual price |
 
 When rate limited, the server returns HTTP 429:
@@ -217,7 +222,7 @@ When rate limited, the server returns HTTP 429:
 |--------|-------|---------|
 | 400 | Insufficient HC balance | Not enough available HC |
 | 400 | Insufficient share balance | Trying to sell more than owned |
-| 400 | Price move exceeds cap | Trade would move price > 5% |
+| 400 | Price move exceeds cap | Trade would move price beyond cap (currently uncapped) |
 | 401 | Unauthorized | Missing or invalid token |
 | 409 | Price changed since order | Slippage exceeded 1% — retry with fresh price |
 | 429 | Rate limited | Too many trades — wait and retry |
