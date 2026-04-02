@@ -39,7 +39,13 @@ The script outputs a JSON object containing the sentiment analysis results:
   "job_title": "Software Engineer",
   "query": "Software Engineer AI automation",
   "articles_analyzed": 10,
-  "sentiment_score": -0.45
+  "sentiment_score": -0.45,
+  "article_scores": [
+    {
+      "title": "Example Article Title",
+      "score": -0.45
+    }
+  ]
 }
 ```
 
@@ -54,3 +60,5 @@ The script includes a basic mapping of tickers to job titles:
 - `HR` -> Human Resources
 - `NURSE` -> Nurse
 - `TEACHER` -> Teacher
+- `TRADER` -> Financial Trader
+- `LAWYER` -> Lawyer

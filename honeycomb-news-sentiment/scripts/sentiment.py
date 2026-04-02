@@ -4,7 +4,12 @@ import urllib.parse
 import urllib.request
 import json
 import re
-from xml.etree import ElementTree as ET
+
+try:
+    from defusedxml import ElementTree as ET
+except ImportError:
+    print(json.dumps({"error": "defusedxml not installed. Run: pip install defusedxml"}))
+    sys.exit(1)
 
 try:
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -13,7 +18,6 @@ except ImportError:
     sys.exit(1)
 
 def get_job_title(ticker):
-    ticker = ticker.replace('$', '').upper()
     mapping = {
         'SWE': 'Software Engineer',
         'PM': 'Product Manager',
@@ -28,10 +32,8 @@ def get_job_title(ticker):
     }
     return mapping.get(ticker, ticker)
 
-def analyze_article(title, description, job_title):
-    analyzer = SentimentIntensityAnalyzer()
-    
-    # 1. Provide VADER sentiment base (General NLP scoring)
+def analyze_article(title, description, job_title, analyzer):
+    # 1. Provide VADER sentiment base (General NLP scoring, pre-instantiated analyzer passed in)
     title_vader = analyzer.polarity_scores(title)['compound']
     desc_vader = analyzer.polarity_scores(description)['compound']
     
@@ -39,6 +41,8 @@ def analyze_article(title, description, job_title):
     vader_base = (title_vader * 2 + desc_vader) / 3
     
     text = f"{title} {title} {description}".lower()
+    tokens = re.findall(r'\b\w+\b', text)
+    words = set(tokens)
     
     # 2. Expanded keyword lists specifically for AI & Automation
     automation_negative = [
@@ -79,19 +83,29 @@ def analyze_article(title, description, job_title):
     context = job_context.get(job_title, {'negative': ['completely automated', 'replaced by robot'], 'positive': ['ai tool', 'tech assistant']})
     
     custom_score = 0
-    words = set(re.findall(r'\b\w+\b', text))
     
-    # We use exact phrase matching for list items that have multiple words, and word matching for single words.
+    # We use exact phrase matching for list items that have multiple words, and token-based word matching for single words.
     for phrase in automation_negative + context['negative']:
-        if phrase in text:
-            # title count twice, description once (since title is duplicated in text string)
-            occurrences = text.count(phrase)
-            custom_score -= (0.15 * occurrences)
+        phrase_l = phrase.lower()
+        if ' ' in phrase_l:
+            if phrase_l in text:
+                occurrences = text.count(phrase_l)
+                custom_score -= (0.15 * occurrences)
+        else:
+            if phrase_l in words:
+                occurrences = sum(1 for w in tokens if w == phrase_l)
+                custom_score -= (0.15 * occurrences)
             
     for phrase in automation_positive + context['positive']:
-        if phrase in text:
-            occurrences = text.count(phrase)
-            custom_score += (0.15 * occurrences)
+        phrase_l = phrase.lower()
+        if ' ' in phrase_l:
+            if phrase_l in text:
+                occurrences = text.count(phrase_l)
+                custom_score += (0.15 * occurrences)
+        else:
+            if phrase_l in words:
+                occurrences = sum(1 for w in tokens if w == phrase_l)
+                custom_score += (0.15 * occurrences)
             
     # Combine VADER NLP scoring (0.4 weight) + Custom Automation Rules (0.6 weight)
     final_score = (vader_base * 0.4) + (custom_score * 0.6)
@@ -103,17 +117,24 @@ def main():
         print(json.dumps({"error": "Please provide a ticker (e.g. $SWE)"}))
         sys.exit(1)
         
-    ticker = sys.argv[1]
+    raw_ticker = sys.argv[1]
+    ticker = raw_ticker.replace('$', '').upper()
     job_title = get_job_title(ticker)
     
     query = f"{job_title} AI automation"
     encoded_query = urllib.parse.quote_plus(query)
-    
     url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+    
+    # Instantiate analyzer once to save expensive overhead
+    try:
+        analyzer = SentimentIntensityAnalyzer()
+    except Exception as e:
+        print(json.dumps({"error": f"Failed to initialize analyzer: {e}"}))
+        sys.exit(1)
     
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             xml_data = response.read()
             
         root = ET.fromstring(xml_data)
@@ -125,10 +146,13 @@ def main():
         if channel is not None:
             items = channel.findall('item')
             for item in items[:10]: # Analyze top 10
-                title = item.find('title').text if item.find('title') is not None else ""
-                desc = item.find('description').text if item.find('description') is not None else ""
+                title_el = item.find('title')
+                desc_el = item.find('description')
                 
-                score = analyze_article(title, desc, job_title)
+                title = (title_el.text or "").strip() if title_el is not None else ""
+                desc = (desc_el.text or "").strip() if desc_el is not None else ""
+                
+                score = analyze_article(title, desc, job_title, analyzer)
                 total_score += score
                 articles.append({
                     "title": title,
