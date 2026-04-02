@@ -22,9 +22,10 @@ Analyze news sentiment regarding AI automation for specific job position tickers
 
 ## Usage
 
-You can use the included `scripts/sentiment.py` script to run the analysis:
+You can use the included `scripts/sentiment.py` script to run the analysis from the `honeycomb-news-sentiment` directory:
 
 ```bash
+cd honeycomb-news-sentiment
 python3 scripts/sentiment.py SWE
 ```
 
